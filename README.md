@@ -1,3 +1,9 @@
+<p>
+  <img src="https://raw.github.com/goshatch/atproto-clojure/main/resources/logo.png" 
+  alt="Absolute Terror Protocol"
+  style="max-width:300px;" />
+</p>
+
 # atproto Clojure SDK
 
 Work very much in progress
