@@ -2,12 +2,12 @@
   (:require [clojure.spec.alpha :as s]))
 
 ;; Spec for SDK configuration
-(s/def ::base-url string?)
-(s/def ::auth-token (s/nilable string?))
+(s/def ::base-url     string?)
+(s/def ::auth-token   (s/nilable string?))
 (s/def ::app-password (s/nilable string?))
-(s/def ::username (s/nilable string?))
-(s/def ::config (s/keys :req-un [::base-url]
-                        :opt-un [::auth-token ::app-password ::username]))
+(s/def ::username     (s/nilable string?))
+(s/def ::config       (s/keys :req-un [::base-url]
+                              :opt-un [::auth-token ::app-password ::username]))
 
 (defonce config (atom {}))
 
@@ -26,13 +26,13 @@
 
 (comment
   ; Initialise configuration
-  (init {:base-url "https://bsky.social"
-         :username "someuser.bsky.social"
+  (init {:base-url     "https://bsky.social"
+         :username     "someuser.bsky.social"
          :app-password "some-app-password"})
   ; Exchange app password for auth token
   (net.gosha.atproto.client/authenticate!)
   ; Make API requests
-  (net.gosha.atproto.client/get-req "/xrpc/com.atproto.server.getSession")
+  (net.gosha.atproto.client/get-req "/xrpc/com.atproto.server.getSession"))
   ; ???
   ; Profit
-  )
+  
