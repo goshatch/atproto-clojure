@@ -1,5 +1,6 @@
 .DS_Store
 .idea
+*.iml
 .clj-kondo
 .lsp
 *.log
@@ -17,3 +18,5 @@ pom.xml.asc
 /.nrepl-port
 /.prepl-port
 /.cpcache
+
+/samples
