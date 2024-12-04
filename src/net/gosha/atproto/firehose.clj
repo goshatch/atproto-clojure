@@ -1,12 +1,12 @@
 (ns net.gosha.atproto.firehose
   (:require
-   [clojure.core.async      :as async]
-   [clojure.tools.logging   :as log]
-   [clj-cbor.core           :as cbor])
+   [clojure.core.async    :as async]
+   [clojure.tools.logging :as log]
+   [clj-cbor.core         :as cbor])
   (:import
-   [java.io                 ByteArrayInputStream InputStream]
-   [java.nio                ByteBuffer]
-   [java.net                URI]
+   [java.io  ByteArrayInputStream InputStream]
+   [java.nio ByteBuffer]
+   [java.net URI]
    [org.java_websocket.client WebSocketClient]
    [org.java_websocket.handshake ServerHandshake]))
 
@@ -23,7 +23,7 @@
   (loop [shift  0
          result 0]
     (let [byte (.read in)]
-      (if (< byte 0)
+      (if (neg? byte)
         (throw (ex-info "EOF while reading varint" {})))
       (let [result (bit-or result (bit-shift-left (bit-and byte 0x7f) shift))]
         (if (zero? (bit-and byte 0x80))
