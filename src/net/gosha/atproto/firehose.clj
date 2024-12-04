@@ -1,12 +1,12 @@
 (ns net.gosha.atproto.firehose
   (:require
-   [clojure.core.async    :as async]
-   [clojure.tools.logging :as log]
-   [clj-cbor.core         :as cbor])
+   [clojure.core.async      :as async]
+   [clojure.tools.logging   :as log]
+   [clj-cbor.core           :as cbor])
   (:import
-   [java.io  ByteArrayInputStream InputStream]
-   [java.nio ByteBuffer]
-   [java.net URI]
+   [java.io                 ByteArrayInputStream InputStream]
+   [java.nio                ByteBuffer]
+   [java.net                URI]
    [org.java_websocket.client WebSocketClient]
    [org.java_websocket.handshake ServerHandshake]))
 
@@ -46,7 +46,9 @@
                   bytes-read (.read in buffer 0 length)]
               (when (= bytes-read length)
                 (with-open [frame-stream (ByteArrayInputStream. buffer)]
-                  (cbor/decode codec frame-stream))))))))
+                  (let [decoded (cbor/decode codec frame-stream)]
+                    (log/debug "Decoded frame type:" (type decoded))
+                    decoded))))))))
     (catch Exception e
       (log/error e "Error decoding frame")
       nil)))
@@ -63,6 +65,7 @@
     
     (onMessage [data]
       (when-let [decoded (decode-frame data codec)]
+        (log/debug "Received message of type:" (type decoded))
         (async/>!! output-ch decoded)))
     
     (onError [^Exception ex]
@@ -105,9 +108,11 @@
   ;; Test connection
   (def conn (connect-firehose))
   
-  ;; Monitor some events
-  (dotimes [_ 5]
-    (println (async/<!! (:events conn))))
+  ;; Print raw event type and structure
+  (let [event (async/<!! (:events conn))]
+    (println "Event type:" (type event))
+    (println "Event str:" (str event))
+    (println "Event pr-str:" (pr-str event)))
   
   ;; Cleanup
   (disconnect conn))
