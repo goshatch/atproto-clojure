@@ -8,7 +8,6 @@
    [org.java_websocket.client WebSocketClient]))
 
 (defn parse-firehose-message
-  "Parse a firehose message into a structured format"
   [message]
   (try
     (let [data (json/read-str message :key-fn keyword)]
@@ -34,10 +33,10 @@
   (doto 
     (proxy [WebSocketClient] [(URI. (str uri "?wantedCollections=app.bsky.feed.post"))]
       (onOpen [_]
-        (log/info "Connected to jetstream"))
+        (log/info "Connected to firehose"))
       
       (onClose [code reason remote]
-        (log/info "Disconnected from jetstream:" reason))
+        (log/info "Disconnected from firehose:" reason))
       
       (onMessage [message]
         (when-let [parsed (parse-firehose-message message)]
@@ -48,7 +47,7 @@
     (.setConnectionLostTimeout 60)))
 
 (defn connect-firehose
-  "Connect to ATProto firehose and return a channel of events"
+  "Returns a channel of events"
   [& {:keys [buffer-size service]
       :or   {buffer-size 1024
              service     "wss://jetstream2.us-east.bsky.network"}}]
@@ -69,7 +68,7 @@
     (async/close! events)))
 
 (comment
-  ;; Example usage
+
   (def conn (connect-firehose))
   
   (let [event (async/alt!!
@@ -80,4 +79,7 @@
               :collection (:collection event)
               :text      (get-in event [:record :text])}))
   
-  (disconnect conn))
+  (disconnect conn)
+  
+  
+  ,)
