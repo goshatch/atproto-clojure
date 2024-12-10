@@ -8,7 +8,11 @@
    [org.java_websocket.client WebSocketClient]))
 
 (def parse-fn 
-  (json/parse-json-fn {:key-fn keyword}))
+  (json/parse-json-fn 
+   {:key-fn   keyword
+    :profile  :mutable ; Use mutable datastructures for better performance
+    :async?   false    ; Disable async for small messages
+    :bufsize  8192}))  ; Smaller buffer size for small messages}))
 
 (defn parse-message
   "Parse a message into a structured format"
