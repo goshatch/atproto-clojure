@@ -1,9 +1,11 @@
 (ns net.gosha.atproto.firehose-analysis
   (:require
-   [clojure.core.async :as async]
+   [charred.api                :as json]
+   [clojure.core.async         :as async]
+   [clojure.java.io            :as io]
    [net.gosha.atproto.firehose :as firehose])
   (:import
-   [java.time Instant Duration]))
+   [java.time Duration Instant]))
 
 (defn calculate-message-sizes [msg]
   {:raw-bytes   (count (str msg))
@@ -119,8 +121,67 @@
   (when analysis-ch 
     (async/close! analysis-ch)))
 
+
+;; Save some data for further analysis
+(def json-writer
+  (json/write-json-fn
+   {:escape-unicode       true
+    :escape-js-separators true
+    :escape-slash         true}))
+
+(def json-reader
+  (json/parse-json-fn
+   {:key-fn  keyword
+    :profile :immutable}))
+
+(defn ensure-samples-dir!
+  "Create samples directory if it doesn't exist"
+  []
+  (let [dir (io/file "samples")]
+    (when-not (.exists dir)
+      (.mkdir dir))
+    dir))
+
+(defn collect-samples
+  "Collect N sample messages from the firehose and save to a file.
+   Returns a channel that closes when collection is complete."
+  [conn n & {:keys [filename]
+             :or   {filename (format "samples/firehose-%s.json"
+                                    (.toString (Instant/now)))}}]
+  (ensure-samples-dir!)
+  (let [done-ch   (async/chan)
+        samples   (atom [])
+        sample-ch (async/chan 1024)
+        mult      (async/mult (:events conn))]
+    
+    (async/tap mult sample-ch)
+    
+    (async/go-loop []
+      (if-let [msg (async/<! sample-ch)]
+        (do
+          (swap! samples conj msg)
+          (if (>= (count @samples) n)
+            (do
+              (with-open [w (io/writer filename)]
+                (json-writer w @samples))
+              (async/close! sample-ch)
+              (async/close! done-ch))
+            (recur)))
+        (async/close! done-ch)))
+    
+    {:filename filename
+     :done-ch  done-ch}))
+
+(defn read-samples
+  "Read samples from a JSON file"
+  [filename]
+  (with-open [r (io/reader filename)]
+    (json-reader (slurp r))))
+
+
 (comment
   
+  ;; Example usage for firehose analysis
   (def conn (firehose/connect-firehose))
   (def analysis (start-analysis conn :window-duration-seconds 30))
   
@@ -132,5 +193,26 @@
   (get-summary @(:state analysis))
   
   ;; Cleanup firehose connection
+  (firehose/disconnect conn)
+
+
+  ;; Example usage for sample collection
+  (def conn (firehose/connect-firehose))
+  
+  ;; Collect 10 messages
+  (def collection (collect-samples conn 10))
+  
+  ;; Wait for collection to complete
+  (async/<!! (:done-ch collection))
+  
+  ;; The samples are now saved in samples/firehose-{timestamp}.json
+  ;; You can also specify a custom filename:
+  (collect-samples conn 5 
+                  :filename "samples/small-sample.json")
+  
+  ;; Read saved samples back
+  (read-samples "samples/small-sample.json")
+  
+  ;; Cleanup
   (firehose/disconnect conn)
   ,)
