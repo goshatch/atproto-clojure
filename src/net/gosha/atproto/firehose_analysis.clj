@@ -7,15 +7,21 @@
   (:import
    [java.time Duration Instant]))
 
-(defn calculate-message-sizes [msg]
-  {:raw-bytes   (count (str msg))
-   :content-len (count (or (get-in msg [:record :text]) ""))})
+(defn calculate-message-sizes
+  [msg]
+  (if msg  ; Guard against nil messages
+    {:raw-bytes   (count (str msg))
+     :content-len (count (or (get-in msg [:record :text]) ""))}
+    {:raw-bytes   0
+     :content-len 0}))
 
-(defn format-bytes [bytes]
-  (cond
-    (< bytes 1024)          (format "%d B" bytes)
-    (< bytes (* 1024 1024)) (format "%.2f KB" (/ bytes 1024.0))
-    :else                   (format "%.2f MB" (/ bytes (* 1024.0 1024.0)))))
+(defn format-bytes
+  [bytes]
+  (let [bytes (float (or bytes 0))]  ; Convert to float to handle ratios
+    (cond
+      (< bytes 1024)          (format "%d B" (long bytes))
+      (< bytes (* 1024 1024)) (format "%.2f KB" (double (/ bytes 1024.0)))
+      :else                   (format "%.2f MB" (double (/ bytes (* 1024.0 1024.0)))))))
 
 (defn create-window [start duration]
   {:start-time         start
@@ -41,14 +47,16 @@
 (defn update-window
   "Update window stats with a new message"
   [window msg]
-  (let [{:keys [raw-bytes content-len]} (calculate-message-sizes msg)]
-    (-> window
-        (update :message-count inc)
-        (update :total-raw-bytes + raw-bytes)
-        (update :total-content-len + content-len)
-        (update :max-msg-size max raw-bytes)
-        (update :min-msg-size min raw-bytes)
-        (update-in [:types (:type msg)] (fnil inc 0)))))
+  (if (and window msg)  ; Guard against nil window or message
+    (let [{:keys [raw-bytes content-len]} (calculate-message-sizes msg)]
+      (-> window
+          (update :message-count inc)
+          (update :total-raw-bytes + raw-bytes)
+          (update :total-content-len + content-len)
+          (update :max-msg-size max raw-bytes)
+          (update :min-msg-size min raw-bytes)
+          (update-in [:types (:type msg)] (fnil inc 0))))
+    window))
 
 (defn rotate-window!
   [{:keys [current-window window-duration] :as state}]
@@ -85,34 +93,55 @@
      :analysis-ch analysis-ch}))
 
 (defn window-summary
-  [{:keys [msg-count total-raw-bytes total-content-len
-           max-msg-size min-msg-size types]}]
-  {:message-count msg-count
-   :total-size    (format-bytes total-raw-bytes)
-   :total-content (format-bytes total-content-len)
-   :avg-msg-size  (format-bytes (if (pos? msg-count)
-                                 (/ total-raw-bytes msg-count)
-                                 0))
-   :max-msg-size  (format-bytes max-msg-size)
-   :min-msg-size  (format-bytes (if (= min-msg-size Long/MAX_VALUE)
-                                 0
-                                 min-msg-size))
-   :types         types})
+  "Create a human-readable summary of a time window"
+  [{:keys [message-count total-raw-bytes total-content-len
+           max-msg-size min-msg-size types]
+    :as window}]
+  (if window
+    {:message-count (or message-count 0)
+     :total-size    (format-bytes total-raw-bytes)
+     :total-content (format-bytes total-content-len)
+     :avg-msg-size  (format-bytes (if (pos? (or message-count 0))
+                                   (float (/ (or total-raw-bytes 0) 
+                                           (max 1 message-count)))
+                                   0))
+     :max-msg-size  (format-bytes (or max-msg-size 0))
+     :min-msg-size  (format-bytes (if (= min-msg-size Long/MAX_VALUE)
+                                   0
+                                   (or min-msg-size 0)))
+     :types         (or types {})}
+
+    {:message-count 0
+     :total-size    "0 B"
+     :total-content "0 B"  
+     :avg-msg-size  "0 B"
+     :max-msg-size  "0 B"
+     :min-msg-size  "0 B"
+     :types         {}}))
 
 (defn get-summary
-  [{:keys [start-time stop-time processed-count windows current-window]}]
-  (let [end-time (or stop-time (Instant/now))
-        duration (Duration/between start-time end-time)
-        total-windows (conj windows current-window)
-        runtime-secs  (.getSeconds duration)]
-    {:runtime-seconds  runtime-secs
-     :status           (if stop-time "stopped" "running")
-     :total-messages   processed-count
-     :messages-per-sec (float (/ processed-count 
-                                (max 1 runtime-secs)))
-     :windows-summary  (->> total-windows
-                           (map window-summary)
-                           (take-last 5))}))
+  [{:keys [start-time stop-time processed-count windows current-window]
+    :as state}]
+  (if state
+    (let [end-time      (or stop-time (Instant/now))
+          duration      (Duration/between (or start-time end-time) end-time)
+          total-windows (if current-window
+                         (conj (vec windows) current-window)
+                         (vec windows))
+          runtime-secs  (.getSeconds duration)]
+      {:runtime-seconds  runtime-secs
+       :status           (if stop-time "stopped" "running")
+       :total-messages   (or processed-count 0)
+       :messages-per-sec (float (/ (or processed-count 0)
+                                  (max 1 runtime-secs)))
+       :windows-summary  (->> total-windows
+                            (map window-summary)
+                            (take-last 5))})
+    {:runtime-seconds  0
+     :status           "unknown"
+     :total-messages   0
+     :messages-per-sec 0.0
+     :windows-summary  []}))
 
 (defn stop-analysis
   [{:keys [analysis-ch state]}]
@@ -122,7 +151,7 @@
     (async/close! analysis-ch)))
 
 
-;; Save some data for further analysis
+;; Save data for further analysis
 (def json-writer
   (json/write-json-fn
    {:escape-unicode       true

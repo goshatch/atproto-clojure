@@ -15,10 +15,9 @@
     :bufsize  8192}))  ; Smaller buffer size for small messages}))
 
 (defn parse-message
-  "Parse a message into a structured format"
-  [message]
+  [msg]
   (try
-    (let [data (parse-fn message)]
+    (let [data (parse-fn msg)]
       (case (:kind data)
         "commit" 
         {:type       :commit
