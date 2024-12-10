@@ -2,15 +2,19 @@
   (:require
    [clojure.core.async    :as async]
    [clojure.tools.logging :as log]
-   [clojure.data.json     :as json])
+   [charred.api           :as json])
   (:import
    [java.net URI]
    [org.java_websocket.client WebSocketClient]))
 
-(defn parse-firehose-message
+(def parse-fn 
+  (json/parse-json-fn {:key-fn keyword}))
+
+(defn parse-message
+  "Parse a message into a structured format"
   [message]
   (try
-    (let [data (json/read-str message :key-fn keyword)]
+    (let [data (parse-fn message)]
       (case (:kind data)
         "commit" 
         {:type       :commit
@@ -39,7 +43,7 @@
         (log/info "Disconnected from firehose:" reason))
       
       (onMessage [message]
-        (when-let [parsed (parse-firehose-message message)]
+        (when-let [parsed (parse-message message)]
           (async/>!! output-ch parsed)))
       
       (onError [^Exception ex]
