@@ -17,3 +17,5 @@ pom.xml.asc
 /.nrepl-port
 /.prepl-port
 /.cpcache
+
+sample-messages.edn
