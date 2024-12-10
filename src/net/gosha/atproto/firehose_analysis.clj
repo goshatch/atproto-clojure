@@ -1,23 +1,36 @@
 (ns net.gosha.atproto.firehose-analysis
   (:require
-   [clojure.core.async      :as async]
-   [clojure.tools.logging   :as log]
+   [clojure.core.async :as async]
    [net.gosha.atproto.firehose :as firehose])
   (:import
    [java.time Instant Duration]))
 
+(defn calculate-message-sizes [msg]
+  {:raw-bytes   (count (str msg))
+   :content-len (count (or (get-in msg [:record :text]) ""))})
+
+(defn format-bytes [bytes]
+  (cond
+    (< bytes 1024)          (format "%d B" bytes)
+    (< bytes (* 1024 1024)) (format "%.2f KB" (/ bytes 1024.0))
+    :else                   (format "%.2f MB" (/ bytes (* 1024.0 1024.0)))))
+
 (defn create-window [start duration]
-  {:start-time      start
-   :end-time        (.plus start duration)
-   :message-count   0
-   :total-bytes     0
-   :types           {}})
+  {:start-time         start
+   :end-time          (.plus start duration)
+   :message-count     0
+   :total-raw-bytes   0
+   :total-content-len 0
+   :max-msg-size      0
+   :min-msg-size      Long/MAX_VALUE
+   :types             {}})
 
 (defn create-analysis-state
   [window-duration-seconds]
   (let [now      (Instant/now)
         duration (Duration/ofSeconds window-duration-seconds)]
     {:start-time      now
+     :stop-time       nil
      :processed-count 0
      :current-window  (create-window now duration)
      :windows         []
@@ -25,15 +38,17 @@
 
 (defn update-window
   "Update window stats with a new message"
-  [window message]
-  (let [msg-size (count (str message))]
+  [window msg]
+  (let [{:keys [raw-bytes content-len]} (calculate-message-sizes msg)]
     (-> window
         (update :message-count inc)
-        (update :total-bytes + msg-size)
-        (update-in [:types (:type message)] (fnil inc 0)))))
+        (update :total-raw-bytes + raw-bytes)
+        (update :total-content-len + content-len)
+        (update :max-msg-size max raw-bytes)
+        (update :min-msg-size min raw-bytes)
+        (update-in [:types (:type msg)] (fnil inc 0)))))
 
 (defn rotate-window!
-  "Check if current window should be rotated and create new window if needed"
   [{:keys [current-window window-duration] :as state}]
   (let [now (Instant/now)]
     (if (.isAfter now (:end-time current-window))
@@ -44,15 +59,13 @@
       state)))
 
 (defn process-message!
-  "Process a single message and update analysis state"
-  [state message]
+  [state msg]
   (-> state
       rotate-window!
       (update :processed-count inc)
-      (update :current-window update-window message)))
+      (update :current-window update-window msg)))
 
 (defn start-analysis
-  "Start analyzing messages from a firehose connection"
   [conn & {:keys [window-duration-seconds]
            :or   {window-duration-seconds 60}}]
   (let [analysis-ch (async/chan 1024)
@@ -69,32 +82,55 @@
     {:state       state
      :analysis-ch analysis-ch}))
 
+(defn window-summary
+  [{:keys [msg-count total-raw-bytes total-content-len
+           max-msg-size min-msg-size types]}]
+  {:message-count msg-count
+   :total-size    (format-bytes total-raw-bytes)
+   :total-content (format-bytes total-content-len)
+   :avg-msg-size  (format-bytes (if (pos? msg-count)
+                                 (/ total-raw-bytes msg-count)
+                                 0))
+   :max-msg-size  (format-bytes max-msg-size)
+   :min-msg-size  (format-bytes (if (= min-msg-size Long/MAX_VALUE)
+                                 0
+                                 min-msg-size))
+   :types         types})
+
 (defn get-summary
-  "Generate a summary of the current analysis state"
-  [{:keys [start-time processed-count windows current-window]}]
-  (let [duration       (Duration/between start-time (Instant/now))
-        total-windows  (conj windows current-window)]
-    {:runtime-seconds  (.getSeconds duration)
+  [{:keys [start-time stop-time processed-count windows current-window]}]
+  (let [end-time (or stop-time (Instant/now))
+        duration (Duration/between start-time end-time)
+        total-windows (conj windows current-window)
+        runtime-secs  (.getSeconds duration)]
+    {:runtime-seconds  runtime-secs
+     :status           (if stop-time "stopped" "running")
      :total-messages   processed-count
      :messages-per-sec (float (/ processed-count 
-                                (max 1 (.getSeconds duration))))
+                                (max 1 runtime-secs)))
      :windows-summary  (->> total-windows
-                           (map #(select-keys % [:message-count :types]))
+                           (map window-summary)
                            (take-last 5))}))
 
 (defn stop-analysis
-  [{:keys [analysis-ch]}]
-  (async/close! analysis-ch))
+  [{:keys [analysis-ch state]}]
+  (when state
+    (swap! state assoc :stop-time (Instant/now)))
+  (when analysis-ch 
+    (async/close! analysis-ch)))
 
 (comment
-  ;; Example usage
+  
   (def conn (firehose/connect-firehose))
   (def analysis (start-analysis conn :window-duration-seconds 30))
   
-  ;; Get current stats after running for a while
+  ;; Get current stats while running
   (get-summary @(:state analysis))
   
-  ;; Cleanup
+  ;; Stop and get final stats
   (stop-analysis analysis)
+  (get-summary @(:state analysis))
+  
+  ;; Cleanup firehose connection
   (firehose/disconnect conn)
   ,)
