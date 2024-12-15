@@ -1,8 +1,17 @@
 (ns net.gosha.atproto.client
-  (:require [org.httpkit.client :as http]
-            [clojure.data.json :as json]
-            [clojure.pprint :refer [pprint]]
-            [net.gosha.atproto.core :as core]))
+  (:require
+   [clojure.data.json :as json]
+   [clojure.pprint :refer [pprint]]
+   [martian.core :as martian]
+   [martian.httpkit :as martian-http]
+   [net.gosha.atproto.core :as core]
+   [org.httpkit.client :as http]))
+
+(def openapi-url "https://raw.githubusercontent.com/bluesky-social/bsky-docs/refs/heads/main/atproto-openapi-types/spec/api.json")
+
+(def api (martian-http/bootstrap-openapi
+           openapi-url
+           {:server-url (:base-url @core/config)}))
 
 (defn request
   "Make an HTTP request to the atproto API.
@@ -57,9 +66,10 @@
   "Authenticate with the atproto API using an app password.
    Updates configuration with auth token."
   []
-  (let [endpoint "/xrpc/com.atproto.server.createSession"
-        response (post-req endpoint {:identifier (:username @core/config)
-                                 :password (:app-password @core/config)}
-                       {:base-url (:base-url @core/config)})
-        token (get-in response [:body :accessJwt])]
+  (let [response (martian/response-for
+                   api
+                   :com.atproto.server.create-session
+                   {:identifier (:username @core/config)
+                    :password (:app-password @core/config)})
+        token (get-in @response [:body :accessJwt])]
     (swap! core/config assoc :auth-token token)))
