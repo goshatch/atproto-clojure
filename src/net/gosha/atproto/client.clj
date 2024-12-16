@@ -9,9 +9,16 @@
 
 (def openapi-url "https://raw.githubusercontent.com/bluesky-social/bsky-docs/refs/heads/main/atproto-openapi-types/spec/api.json")
 
+(defn add-authentication-header [token]
+  {:name ::add-authentication-header
+   :enter (fn [ctx]
+            (assoc-in ctx [:request :headers "Authorization"] (str "Bearer " token)))})
+
 (def api (martian-http/bootstrap-openapi
            openapi-url
-           {:server-url (:base-url @core/config)}))
+           {:server-url (:base-url @core/config)
+            :interceptors (concat [(add-authentication-header (:auth-token @core/config))]
+                                  martian-http/default-interceptors)}))
 
 (defn request
   "Make an HTTP request to the atproto API.
