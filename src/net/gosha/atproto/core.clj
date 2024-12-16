@@ -1,5 +1,6 @@
 (ns net.gosha.atproto.core
-  (:require [clojure.spec.alpha :as s]))
+  (:require
+   [clojure.spec.alpha :as s]))
 
 ;; Spec for SDK configuration
 (s/def ::base-url string?)
@@ -32,7 +33,6 @@
   ; Exchange app password for auth token
   (net.gosha.atproto.client/authenticate!)
   ; Make API requests
-  (net.gosha.atproto.client/get-req "/xrpc/com.atproto.server.getSession")
+  @(net.gosha.atproto.client/call :com.atproto.server.get-session))
   ; ???
   ; Profit
-  )

@@ -1,11 +1,8 @@
 (ns net.gosha.atproto.client
   (:require
-   [clojure.data.json :as json]
-   [clojure.pprint :refer [pprint]]
    [martian.core :as martian]
    [martian.httpkit :as martian-http]
-   [net.gosha.atproto.core :as core]
-   [org.httpkit.client :as http]))
+   [net.gosha.atproto.core :as core]))
 
 (def openapi-url "https://raw.githubusercontent.com/bluesky-social/bsky-docs/refs/heads/main/atproto-openapi-types/spec/api.json")
 
@@ -20,54 +17,12 @@
             :interceptors (concat [(add-authentication-header (:auth-token @core/config))]
                                   martian-http/default-interceptors)}))
 
-(defn request
+(defn call
   "Make an HTTP request to the atproto API.
-  - `method`: HTTP method (:get, :post, etc.)
-  - `endpoint`: API endpoint (relative to `:base-url`)
-  - `body`: Request body (optional)
-  - `headers`: Additional headers (optional)
-  - `retries`: Number of retries for transient failures"
-  [method endpoint & [{:keys [body headers retries] :or {retries 3}}]]
-  (let [{:keys [base-url auth-token]} @core/config]
-    (when-not base-url
-      (throw (ex-info "SDK not initialised: missing base-url" {})))
-    (let [url (str base-url endpoint)
-          options {:method method
-                   :url url
-                   :headers (merge {"Authorization" (str "Bearer " auth-token)
-                                    "Content-Type" "application/json"}
-                                   headers)
-                   :body (when body (json/write-str body))}]
-      (loop [attempt 0]
-        (let [response (try
-                         {:success true
-                          :result @(http/request options)}
-                         (catch Exception e
-                           {:success false
-                            :error e}))]
-          (if (:success response)
-            (let [result (:result response)]
-              (if (<= 200 (:status result) 299)
-                (update result :body json/read-str :key-fn keyword)
-                (throw (ex-info "API request failed"
-                                {:status (:status result)
-                                 :body (:body result)}))))
-            (if (>= attempt retries)
-              (throw (:error response))
-              (do
-                (Thread/sleep (* 100 (inc attempt)))
-                (recur (inc attempt))))))))))
-
-;; Convenience functions
-(defn get-req
-  "Perform a GET request to the atproto API."
-  [endpoint & [options]]
-  (request :get endpoint options))
-
-(defn post-req
-  "Perform a POST request to the atproto API."
-  [endpoint body & [options]]
-  (request :post endpoint (merge options {:body body})))
+  - `endpoint` API endpoint for the format :com.atproto.server.get-session
+  - `opts` Map of params to pass as params to the endpoint"
+  ([endpoint] (call endpoint {}))
+  ([endpoint opts] (martian/response-for api endpoint opts)))
 
 (defn authenticate!
   "Authenticate with the atproto API using an app password.
