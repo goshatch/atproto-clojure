@@ -1,5 +1,5 @@
 <p>
-  <img src="https://raw.github.com/goshatch/atproto-clojure/main/resources/logo.png" 
+  <img src="https://raw.github.com/goshatch/atproto-clojure/main/resources/logo.png"
   alt="Absolute Terror Protocol"
   style="max-width:300px;" />
 </p>
@@ -31,20 +31,20 @@ Work very much in progress
 The client is using [Martian](https://github.com/oliyh/martian/) under the hood to handle the HTTP endpoints [published](https://github.com/bluesky-social/bsky-docs/tree/main/atproto-openapi-types) by the Bsky team in OpenAPI format
 
 ```clojure
-(require '[net.gosha.atproto.core :as atproto]
-         '[net.gosha.atproto.client :as atproto-client])
+(require '[net.gosha.atproto.client :as at])
 
-(atproto/init {:base-url "https://bsky.social"
-               :username "someuser.bsky.social"
-               :app-password "some-app-password"})
+;; Unauthenticated client
+(def session (at/init :base-url "https://public.api.bsky.app"))
 
-;; This will exchange the app password for a JWT token that can be used to query
-;; endpoints that require authentication.
-(atproto-client/authenticate!)
+;; Authenticated client
+(def session (init :username "me.bsky.social"
+                   :app-password "SECRET"
+                   :base-url " https://bsky.social"))
+
 
 ;; Bluesky endpoints and their query params can be found here:
 ;; https://docs.bsky.app/docs/category/http-reference
-(let [resp (atproto-client/call :app.bsky.actor.get-profile {:actor "gosha.net"})]
+(let [resp (at/call session :app.bsky.actor.get-profile {:actor "gosha.net"})]
   (select-keys (:body @resp) [:handle :displayName :createdAt :followersCount]))
 ;; => {:handle "gosha.net",
 ;; :displayName "Gosha ⚡",
