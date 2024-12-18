@@ -11,18 +11,18 @@ Work very much in progress
 ## Progress
 
 | Feature      | Status |
-|--------------|--------|
-| http client  | 🟡    |
-| identifiers  | 🔴    |
-| bsky         | 🔴    |
-| crypto       | 🔴    |
-| mst          | 🔴    |
-| lexicon      | 🔴    |
-| identity     | 🔴    |
-| streaming    | 🔴    |
-| service auth | 🔴    |
-| plc          | 🔴    |
-| oauth server | 🔴    |
+| ------------ | ------ |
+| http client  | 🟡     |
+| identifiers  | 🔴     |
+| bsky         | 🔴     |
+| crypto       | 🔴     |
+| mst          | 🔴     |
+| lexicon      | 🔴     |
+| identity     | 🔴     |
+| streaming    | 🔴     |
+| service auth | 🔴     |
+| plc          | 🔴     |
+| oauth server | 🔴     |
 
 ## Usage
 
@@ -34,7 +34,7 @@ The client is using [Martian](https://github.com/oliyh/martian/) under the hood 
 (require '[net.gosha.atproto.core :as atproto]
          '[net.gosha.atproto.client :as atproto-client])
 
-(atproto/init {:baase-url "https://bsky.social"
+(atproto/init {:base-url "https://bsky.social"
                :username "someuser.bsky.social"
                :app-password "some-app-password"})
 
@@ -51,6 +51,42 @@ The client is using [Martian](https://github.com/oliyh/martian/) under the hood 
 ;; :createdAt "2023-05-08T19:08:05.781Z",
 ;; :followersCount 617}
 ```
+
+### Jetstream
+
+Connect to Bluesky's [Jetstream service](https://docs.bsky.app/blog/jetstream) to get real-time updates of public network data. Jetstream provides a JSON-based alternative to the binary CBOR firehose, making it easier to work with post streams, likes, follows, and other events.
+
+```clojure
+(require '[net.gosha.atproto.jetstream :as jetstream]
+         '[clojure.core.async          :as async]
+         '[examples.jetstream-analysis :as analysis]))
+
+;; Connect with default settings (subscribes to posts)
+(def conn (jetstream/connect-jetstream (async/chan 1024)))
+
+;; Print out a single post (with 5 second timeout)
+(let [event (async/alt!!
+             (:events conn)    ([v] v)
+             (async/timeout 5000) :timeout)]
+  (clojure.pprint/pprint event))
+
+;; Start analyzing the stream
+(def analysis (analysis/start-analysis conn))
+
+;; Get current statistics about post rates, sizes, etc
+(analysis/get-summary @(:state analysis))
+
+;; Save sample messages for offline analysis
+(analysis/collect-samples conn
+                        {:count    10
+                         :filename "samples/my-samples.json"})
+
+;; Cleanup
+(analysis/stop-analysis analysis)
+(jetstream/disconnect conn)
+```
+
+Check out the `examples.jetstream-analysis` namespace for a complete example of stream processing and analysis.
 
 ## References
 

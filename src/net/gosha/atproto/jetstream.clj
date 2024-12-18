@@ -2,7 +2,6 @@
   (:require
    [charred.api           :as json]
    [clojure.core.async    :as async]
-   [clojure.string :as string]
    [clojure.tools.logging :as log])
   (:import
    [java.net URI]

@@ -20,3 +20,6 @@ pom.xml.asc
 /.cpcache
 
 /samples
+
+resources/dev-config.edn
+src/net/gosha/atproto/scratch.clj
