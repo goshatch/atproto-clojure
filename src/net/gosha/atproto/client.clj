@@ -4,19 +4,17 @@
    [martian.core :as martian]
    [martian.httpkit :as martian-http]))
 
-(s/def ::auth-token string?)
 (s/def ::username string?)
 (s/def ::base-url string?)
 (s/def ::app-password string?)
 (s/def ::openapi-spec string?)
 (s/def ::config (s/keys :req-un [::base-url ::openapi-spec]
-                  :opt-un [::auth-token ::app-password ::username]))
+                  :opt-un [::app-password ::username]))
 
 (def ^{:doc "map of config keys to env vars that can set them"}
   env-keys
   {:openapi-spec "ATPROTO_OPENAPI_SPEC"
    :base-url "ATPROTO_BASE_URL"
-   :auth-token "ATPROTO_AUTH_TOKEN"
    :username "ATPROTO_USERNAME"
    :app-password "ATPROTO_APP_PASSWORD"})
 
@@ -36,12 +34,13 @@
             (assoc-in ctx [:request :headers "Authorization"]
               (str "Bearer " token)))})
 
+;; TODO: automatically refresh expired tokens
 (defn authenticate
   "Given an api session, authenticate with the atproto API using an app password
   and return an authenticated api session.
 
   Note that the session will only work as long as the token is valid. If the
-  token expires, authenticate-session will need to be called again."
+  token expires, authenticate will need to be called again."
   [session]
   (let [{:keys [username app-password openapi-spec base-url]} (::config session)
         response @(martian/response-for
@@ -65,7 +64,6 @@
 
   :username - (optional) Bluesky username.
   :app-password - (optional) Bluesky appplication-specific password.
-  :auth-token - (optional) JWT access token.
   :base-url - Bluesky endpoint. Mandatory. Use 'https://public.api.bsky.app'
               for unauthenticated access, 'https://bsky.social' for
               authenticated, or a different endpoint if you know what you're
@@ -75,8 +73,7 @@
   All options can be specifed via an environment variable prefixed by `ATPROTO_`
   (e.g. ATPROTO_BASE_URL)."
   [& {:as options}]
-  (let [{:keys [auth-token
-                openapi-spec
+  (let [{:keys [openapi-spec
                 base-url
                 username
                 app-password] :as config} (build-config options)]
@@ -86,7 +83,7 @@
     (let [session (martian-http/bootstrap-openapi openapi-spec
                     {:server-url base-url})
           session (assoc session ::config config)]
-      (if (and username app-password (not auth-token))
+      (if username
         (authenticate session)
         session))))
 
