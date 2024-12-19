@@ -53,7 +53,7 @@
         (throw (ex-info (format "Authorization failed (%s)" (:status response))
                  {:response response}))
         (throw (ex-info "Authorization failed (unknown error)"
-                 {:response @response}))))
+                 {:response response}))))
     (martian-http/bootstrap-openapi openapi-spec
       {:server-url base-url
        :interceptors (cons (add-authentication-header token)
