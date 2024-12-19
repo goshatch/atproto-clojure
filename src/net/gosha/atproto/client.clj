@@ -1,6 +1,8 @@
 (ns net.gosha.atproto.client
   (:require
+   [clojure.core.async :as a]
    [clojure.spec.alpha :as s]
+   [clojure.tools.logging :as log]
    [martian.core :as martian]
    [martian.httpkit :as martian-http]))
 
@@ -95,3 +97,16 @@
   - `params` Map of params to pass to the endpoint"
   [session endpoint & {:as opts}]
   (martian/response-for session endpoint opts))
+
+(defn call-async
+  "Like `call`, but returns a core.async channel instead of a IBlockingDeref.
+
+  If an exception is thrown, it will be placed on the channel."
+  [session endpoint & {:as opts}]
+  (let [ch (a/promise-chan)]
+    (future
+      (try
+        (a/>!! ch @(call session endpoint opts))
+        (catch Exception e
+          (a/>!! ch e))))
+    ch))
