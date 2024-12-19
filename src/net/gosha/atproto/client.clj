@@ -23,7 +23,7 @@
 (defn- build-config
   "Build a configuration map based on defaults, env vars and provided values"
   [& {:as user-config}]
-  (-> {:openapi-spec "./resources/atproto-xrpc-openapi.2024-12-18.json"}
+  (-> {:openapi-spec "atproto-xrpc-openapi.2024-12-18.json"}
     (into (map (fn [[cfg-key env-var]]
                  (when-let [val (System/getenv env-var)]
                    {cfg-key val}))
