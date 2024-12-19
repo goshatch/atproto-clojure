@@ -93,6 +93,5 @@
   - `session` The API session returned by `init`.
   - `endpoint` API endpoint for the format :com.atproto.server.get-session
   - `params` Map of params to pass to the endpoint"
-  ([session endpoint] (call session endpoint {}))
-  ([session endpoint opts]
-   (martian/response-for session endpoint opts)))
+  [session endpoint & {:as opts}]
+  (martian/response-for session endpoint opts))
