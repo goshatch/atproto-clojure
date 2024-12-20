@@ -2,6 +2,8 @@
   (:require
    [clojure.core.async :as a]
    [clojure.spec.alpha :as s]
+   [clojure.string :as str]
+   [charred.api :as json]
    [clojure.tools.logging :as log]
    [martian.core :as martian]
    [martian.httpkit :as martian-http]))
@@ -35,6 +37,19 @@
    :enter (fn [ctx]
             (assoc-in ctx [:request :headers "Authorization"]
               (str "Bearer " token)))})
+
+(defn- decode-jwt [token]
+  (let [decoder (java.util.Base64/getUrlDecoder)
+        payload (second (str/split token #"\."))
+        bytes (.getBytes payload "UTF-8")]
+    (-> (.decode decoder bytes)
+        String.
+        json/read-json)))
+
+(defn- expired? [token]
+  (let [exp (:exp (decode-jwt token))
+        now (quot (inst-ms (java.time.Instant/now)) 1000)]
+    (<= exp now)))
 
 ;; TODO: automatically refresh expired tokens
 (defn authenticate
