@@ -13,7 +13,7 @@
 (s/def ::app-password string?)
 (s/def ::openapi-spec string?)
 (s/def ::config (s/keys :req-un [::base-url ::openapi-spec]
-                  :opt-un [::app-password ::username]))
+                  :opt-un [::app-password ::username ::openapi-spec]))
 
 (def ^{:doc "map of config keys to env vars that can set them"}
   env-keys
@@ -21,6 +21,17 @@
    :base-url "ATPROTO_BASE_URL"
    :username "ATPROTO_USERNAME"
    :app-password "ATPROTO_APP_PASSWORD"})
+
+(def ^{:private true
+       :doc "access and refresh tokens for the API"}
+  tokens
+  (atom {:access nil :refresh nil}))
+
+(def ^{:private true} add-authentication-header
+  {:name ::add-authentication-header
+   :enter (fn [ctx]
+            (assoc-in ctx [:request :headers "Authorization"]
+              (str "Bearer " (:access @tokens))))})
 
 (defn- build-config
   "Build a configuration map based on defaults, env vars and provided values"
@@ -31,12 +42,6 @@
                    {cfg-key val}))
             env-keys))
     (merge user-config)))
-
-(defn- add-authentication-header [token]
-  {:name ::add-authentication-header
-   :enter (fn [ctx]
-            (assoc-in ctx [:request :headers "Authorization"]
-              (str "Bearer " token)))})
 
 (defn- decode-jwt [token]
   (let [decoder (java.util.Base64/getUrlDecoder)
@@ -64,17 +69,32 @@
                     session
                     :com.atproto.server.create-session
                     {:identifier username :password app-password})
-        token (get-in response [:body :accessJwt])]
-    (when-not token
+        access-token (get-in response [:body :accessJwt])
+        refresh-token (get-in response [:body :refreshJwt])]
+    (when-not access-token
       (if (:status response)
         (throw (ex-info (format "Authorization failed (%s)" (:status response))
                  {:response response}))
         (throw (ex-info "Authorization failed (unknown error)"
                  {:response response}))))
+    (swap! tokens #(assoc % :access access-token :refresh refresh-token))
     (martian-http/bootstrap-openapi openapi-spec
       {:server-url base-url
-       :interceptors (cons (add-authentication-header token)
-                       martian-http/default-interceptors)})))
+       :interceptors (cons add-authentication-header
+                           martian-http/default-interceptors)})))
+
+(defn refresh-token!
+  "Given an api session, refresh the access token using the refresh token, and
+   update the tokens atom"
+  [session]
+  (let [response @(martian/response-for
+                   session
+                   :com.atproto.server.refresh-session
+                   {:headers { "Authorization" (str "Bearer " (:refresh @tokens))}})
+        access-token (get-in response [:body :accessJwt])
+        refresh-token (get-in response [:body :refreshJwt])]
+    (swap! tokens {:access access-token :refresh refresh-token})
+  ))
 
 (defn init
   "Create and return a new api session. Valid configuration options are:
@@ -111,6 +131,8 @@
   - `endpoint` API endpoint for the format :com.atproto.server.get-session
   - `params` Map of params to pass to the endpoint"
   [session endpoint & {:as opts}]
+  (when (expired? (:access @tokens))
+    (refresh-token! session))
   (martian/response-for session endpoint opts))
 
 (defn call-async
