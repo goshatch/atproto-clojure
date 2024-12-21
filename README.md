@@ -37,9 +37,9 @@ The client is using [Martian](https://github.com/oliyh/martian/) under the hood 
 (def session (at/init :base-url "https://public.api.bsky.app"))
 
 ;; Authenticated client
-(def session (init :username "me.bsky.social"
-                   :app-password "SECRET"
-                   :base-url "https://bsky.social"))
+(def session (at/init :username "me.bsky.social"
+                      :app-password "SECRET"
+                      :base-url "https://bsky.social"))
 
 
 ;; Bluesky endpoints and their query params can be found here:
