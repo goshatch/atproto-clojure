@@ -22,16 +22,14 @@
    :username "ATPROTO_USERNAME"
    :app-password "ATPROTO_APP_PASSWORD"})
 
-(def ^{:private true
-       :doc "access and refresh tokens for the API"}
-  tokens
-  (atom {:access nil :refresh nil}))
-
 (def ^{:private true} add-authentication-header
   {:name ::add-authentication-header
    :enter (fn [ctx]
-            (assoc-in ctx [:request :headers "Authorization"]
-              (str "Bearer " (:access @tokens))))})
+            (let [supplied-auth (get-in ctx [:params :headers "Authorization"])]
+              (assoc-in ctx [:request :headers "Authorization"]
+                        (if supplied-auth
+                          supplied-auth
+                          (str "Bearer " (:access @(:tokens (:opts ctx))))))))})
 
 (defn- build-config
   "Build a configuration map based on defaults, env vars and provided values"
@@ -64,7 +62,8 @@
   Note that the session will only work as long as the token is valid. If the
   token expires, authenticate will need to be called again."
   [session]
-  (let [{:keys [username app-password openapi-spec base-url]} (::config session)
+  (let [config (:config (:opts session))
+        {:keys [username app-password openapi-spec base-url]} config
         response @(martian/response-for
                     session
                     :com.atproto.server.create-session
@@ -77,23 +76,32 @@
                  {:response response}))
         (throw (ex-info "Authorization failed (unknown error)"
                  {:response response}))))
-    (swap! tokens #(assoc % :access access-token :refresh refresh-token))
-    (martian-http/bootstrap-openapi openapi-spec
-      {:server-url base-url
-       :interceptors (cons add-authentication-header
-                           martian-http/default-interceptors)})))
+    (martian-http/bootstrap-openapi
+     openapi-spec
+     {:server-url base-url
+      :tokens (atom {:access access-token :refresh refresh-token})
+      :config config
+      :interceptors (cons add-authentication-header
+                          martian-http/default-interceptors)})))
 
 (defn refresh-token!
   "Given an api session, refresh the access token using the refresh token, and
    update the tokens atom"
   [session]
-  (let [response @(martian/response-for
+  (let [tokens (:tokens (:opts session))
+        response @(martian/response-for
                    session
                    :com.atproto.server.refresh-session
                    {:headers { "Authorization" (str "Bearer " (:refresh @tokens))}})
         access-token (get-in response [:body :accessJwt])
         refresh-token (get-in response [:body :refreshJwt])]
-    (swap! tokens {:access access-token :refresh refresh-token})
+    (when-not access-token
+      (if (:status response)
+        (throw (ex-info (format "Failed refreshing token (%s)" (:status response))
+                        {:body response}))
+        (throw (ex-info "Failed refreshing token (unknown error)"
+                        {:body response}))))
+    (reset! tokens {:access access-token :refresh refresh-token})
   ))
 
 (defn init
@@ -112,14 +120,13 @@
   [& {:as options}]
   (let [{:keys [openapi-spec
                 base-url
-                username
-                app-password] :as config} (build-config options)]
+                username] :as config} (build-config options)]
     (when-not (s/valid? ::config config)
       (throw (ex-info "Invalid configuration"
                {:errors (s/explain-str ::config config)})))
     (let [session (martian-http/bootstrap-openapi openapi-spec
-                    {:server-url base-url})
-          session (assoc session ::config config)]
+                    {:server-url base-url
+                     :config config})]
       (if username
         (authenticate session)
         session))))
@@ -131,7 +138,7 @@
   - `endpoint` API endpoint for the format :com.atproto.server.get-session
   - `params` Map of params to pass to the endpoint"
   [session endpoint & {:as opts}]
-  (when (expired? (:access @tokens))
+  (when (expired? (:access @(:tokens (:opts session))))
     (refresh-token! session))
   (martian/response-for session endpoint opts))
 
