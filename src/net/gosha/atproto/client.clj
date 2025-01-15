@@ -50,11 +50,12 @@
         json/read-json)))
 
 (defn- expired? [token]
-  (let [exp (:exp (decode-jwt token))
-        now (quot (inst-ms (java.time.Instant/now)) 1000)]
-    (<= exp now)))
+  (if (nil? token)
+    false
+    (let [exp (get (decode-jwt token) "exp")
+          now (quot (inst-ms (java.time.Instant/now)) 1000)]
+      (<= exp now))))
 
-;; TODO: automatically refresh expired tokens
 (defn authenticate
   "Given an api session, authenticate with the atproto API using an app password
   and return an authenticated api session.
@@ -136,11 +137,20 @@
 
   - `session` The API session returned by `init`.
   - `endpoint` API endpoint for the format :com.atproto.server.get-session
-  - `params` Map of params to pass to the endpoint"
+  - `opts` Map of options to pass to the endpoint"
   [session endpoint & {:as opts}]
-  (when (expired? (:access @(:tokens (:opts session))))
-    (refresh-token! session))
-  (martian/response-for session endpoint opts))
+  (let [tokens (:tokens (:opts session))]
+    (when (and tokens
+               (expired? (:access @tokens)))
+      (refresh-token! session)))
+  (let [res @(martian/response-for session endpoint opts)
+        error (-> res :body :error)]
+    (if (= error "ExpiredToken")
+      (do
+        (log/info "Access token expired, refreshing.")
+        (refresh-token! session)
+        (call session endpoint opts))
+      res)))
 
 (defn call-async
   "Like `call`, but returns a core.async channel instead of a IBlockingDeref.
