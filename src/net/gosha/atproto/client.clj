@@ -2,11 +2,12 @@
   (:require
    [clojure.core.async :as a]
    [clojure.spec.alpha :as s]
-   [clojure.string :as str]
-   [charred.api :as json]
-   [clojure.tools.logging :as log]
-   [martian.core :as martian]
-   [martian.httpkit :as martian-http]))
+   [clojure.java.io    :as io]
+   [clojure.string     :as str]
+   [charred.api        :as json]
+   [martian.core       :as martian]
+   [martian.httpkit    :as martian-http]
+   [clojure.tools.logging :as log]))
 
 (s/def ::username string?)
 (s/def ::base-url string?)
@@ -31,15 +32,27 @@
                           supplied-auth
                           (str "Bearer " (:access @(:tokens (:opts ctx))))))))})
 
+(defonce local-spec-path "atproto-xrpc-openapi.2024-12-18.json")
+(defonce bsky-spec-url "https://raw.githubusercontent.com/bluesky-social/bsky-docs/main/atproto-openapi-types/spec/api.json")
+
 (defn- build-config
   "Build a configuration map based on defaults, env vars and provided values"
   [& {:as user-config}]
-  (-> {:openapi-spec "atproto-xrpc-openapi.2024-12-18.json"}
-    (into (map (fn [[cfg-key env-var]]
-                 (when-let [val (System/getenv env-var)]
-                   {cfg-key val}))
-            env-keys))
-    (merge user-config)))
+  (let [openapi-spec (or (:openapi-spec user-config)
+                         (System/getenv "ATPROTO_OPENAPI_SPEC")
+                         (try
+                           (with-open [_ (io/input-stream bsky-spec-url)]
+                             (log/info "Using online API spec")
+                             bsky-spec-url)
+                           (catch Exception _
+                             (log/info "Using local OpenAPI spec")
+                             local-spec-path)))]
+    (-> {:openapi-spec openapi-spec}
+        (into (map (fn [[cfg-key env-var]]
+                     (when-let [val (System/getenv env-var)]
+                       {cfg-key val}))
+                   env-keys))
+        (merge user-config))))
 
 (defn- decode-jwt [token]
   (let [decoder (java.util.Base64/getUrlDecoder)
