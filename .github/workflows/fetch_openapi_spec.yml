@@ -1,0 +1,13 @@
+name: Fetch Latest ATProto OpenAPI Spec Daily
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # runs midnight daily
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch JSON file
+        run: |
+          curl -o resources/atproto-xrpc-openapi.LATEST.json https://raw.githubusercontent.com/bluesky-social/bsky-docs/main/atproto-openapi-types/spec/api.json
