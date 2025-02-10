@@ -6,7 +6,7 @@
 
 # atproto Clojure SDK
 
-Work very much in progress
+⚠️ Work on this SDK has been paused (see [this bsky post](https://bsky.app/profile/gosha.net/post/3lhstloh6s22n)). If anyone would like to fork the project and continue the work, you are very welcome to do so!
 
 ## Progress
 
